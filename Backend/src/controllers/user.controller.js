@@ -135,5 +135,155 @@ const logoutUser = asyncHandler(async(req,res) => {
     .json(new ApiResponse(200,{},"User logged Out successfully"))
 })
 
+const refreshAccessToken = asyncHandler(async (req,res) => {
+    const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
+
+    if(!incomingRefreshToken){
+        throw new ApiError(401, "unauthorised request")
+    }
+
+    try {
+        const decodedToken = jwt.verify(
+            incomingRefreshToken,
+            process.env.REFRESH_TOKEN_SECRET
+        )
+    
+        const user = await User.findById(decodedToken?._id)
+    
+        if(!user){
+            throw new ApiError(401,"Invalid refresh token")
+        }
+        if(incomingRefreshToken !== user?.refreshToken){
+            throw new ApiError(401 , "Refresh token is expired or used")
+        }
+    
+        const options = {
+            httpOnly : true,
+            secure : true
+        }
+    
+        const {accessToken, newRefreshToken } = await generateAccesAndRefereshTokens(user._id)
+    
+        return res
+        .status(200)
+        .cookie("accessToken", accessToken,options)
+        .cookie("refreshToken", newRefreshToken,options)
+        .json(
+            new ApiResponse(
+                200,
+                {accessToken,refreshToken:newRefreshToken},
+                "Access token refreshed successfully"
+            )
+        )
+    } catch (error) {
+        throw new ApiError(401,error?.message || "Invalid refresh Token")
+    }
+})
+
+const changeCurrentPassword = asyncHandler(async(req,res) => {
+  const {oldPassword, confirmPassword,newPassword} = req.body
+  
+  if(!confirmPassword === newPassword){
+    throw new ApiError(400,"confirmPassword is not same as newPassword")
+  }
+
+  const user = await User.findById(req.user?._id)
+  const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
+
+  if(!isPasswordCorrect){
+    throw new ApiError(400,"Invalid old password")
+  }
+
+  user.password = newPassword
+  await user.save({validateBeforeSave : false})
+
+  return res
+  .status(200)
+  .json(new ApiResponse(200,{},"password changed successfully"))
+  
+})
+
+const updateAccountDeatils = asyncHandler(async(req,res) => {
+    const {fullname,email} = req.body
+
+    if(!(fullname || email)){
+        throw new ApiError(400,"alll fields are required")
+    }
+
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set : {
+                // fullname : fullname or
+                fullname,
+                email
+            }
+        },
+        {new : true}
+    ).select("-password")
+
+    return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Account details updated successfuly"))
+})
+
+// const upadteUserAvatar = asyncHandler(async(req,res) => {
+
+//   const avatarLocalPath = req.files?.path
+
+//   if(!avatarLocalPath){
+//     throw new ApiError(400,"avatar field is required")
+//   }
+
+//   const avatar = await uploadOnCloudinary(avatarLocalPath)
+
+//   if(!avatar.url){
+//     throw new ApiError(400,"error while uploading avatar")
+//   }
+
+//   const user = User.findByIdAndUpdate(
+//     req.user?._id,
+//     {
+//       $set : {
+//         avatar : avatar.url
+//       }
+//     },
+//     {new :true}
+//   )
+
+//   return res
+//   .status(200)
+//   .json(
+//     new ApiResponse(200,user,"avatar updated successfully")
+//   )
+
+// })
+
+const updateUserAvatar = asyncHandler(async (req, res) => {
+  const avatarLocalPath = req.files?.path;
+
+  if (!avatarLocalPath) {
+    throw new ApiError(400, "Avatar field is required");
+  }
+
+  const avatar = await uploadOnCloudinary(avatarLocalPath);
+
+  if (!avatar.url) {
+    throw new ApiError(400, "Error while uploading avatar");
+  }
+
+  const user = await User.findById(req.user?._id); // ← don't forget await
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  user.avatar = avatar.url;
+  await user.save();
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Avatar updated successfully"));
+});
 
 export { registerUser };
