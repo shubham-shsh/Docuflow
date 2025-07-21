@@ -4,6 +4,7 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken";
+import validator from "email-validator"
 
 const generateAccesAndRefereshTokens = async (userId) => {
   try {
@@ -26,6 +27,10 @@ const registerUser = asyncHandler(async (req, res) => {
 
   if ([username, email, password].some((field) => field?.trim() === "")) {
     throw new ApiError(400, "All fields are required");
+  }
+
+  if(!validator.validate(email)){
+    throw new ApiError(400,"email you entered is not in correct format")
   }
 
   const existedUser = await User.findOne({
