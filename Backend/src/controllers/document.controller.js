@@ -134,7 +134,7 @@ const shareDocument = asyncHandler(async(req,res) => {
 const getAllSharedWithMe = asyncHandler(async(req,res) => {
   const documents = await Document.find({
     sharedWith : req.user._id
-  })
+  }).sort({createdAt : -1})
 
   if (!documents || documents.length === 0) {
     throw new ApiError(404, "No shared documents available");
