@@ -10,8 +10,8 @@ const generateAccesAndRefereshTokens = async (userId) => {
   try {
     const user = await User.findById(userId);
 
-    const accessToken = user.generateAccessToken(); // ✅ called on instance
-    const refreshToken = user.generateRefreshToken(); // ✅ called on instance
+    const accessToken = await user.generateAccessToken(); 
+    const refreshToken = await user.generateRefreshToken();
 
     user.refreshToken = refreshToken;
     await user.save({ validateBeforeSave: false });
@@ -22,15 +22,71 @@ const generateAccesAndRefereshTokens = async (userId) => {
   }
 };
 
-const registerUser = asyncHandler(async (req, res) => {
-  const { username, email, password } = req.body;
+// const registerUser = asyncHandler(async (req, res) => {
+//   const { username, email, password } = req.body;
 
-  if ([username, email, password].some((field) => field?.trim() === "")) {
+//   if ([username, email, password].some((field) => field?.trim() === "")) {
+//     throw new ApiError(400, "All fields are required");
+//   }
+
+//   if(!validator.validate(email)){
+//     throw new ApiError(400,"email you entered is not in correct format")
+//   }
+
+//   const existedUser = await User.findOne({
+//     $or: [{ username }, { email }],
+//   });
+
+//   if (existedUser) {
+//     throw new ApiError(400, "User with email or username already exists");
+//   }
+
+//   //  const avatarLocalPath = req.files?.avatar?.[0]?.path;
+
+//   //   if (!avatarLocalPath) {
+//   //     throw new ApiError(400, "Avatar file is required");
+//   //   }
+
+
+//   if (req.files?.avatar?.length > 0) {
+//     const avatarLocalPath = req.files.avatar[0].path;
+//   }
+
+
+//   const avatar = await uploadOnCloudinary(avatarLocalPath);
+
+//   if (!avatar) {
+//     throw new ApiError(400, "Avatar file is required");
+//   }
+
+//   const user = await User.create({
+//     username: username.toLowerCase(),
+//     email,
+//     password,
+//     avatar: avatar.url,
+//   });
+
+//   const createdUser = await User.findById(user._id).select("-refreshToken");
+
+//   if (!createdUser) {
+//     throw new ApiError(500, "Something went wrong while registering user");
+//   }
+
+//   return res
+//     .status(201)
+//     .json(new ApiResponse(201, createdUser, "User registered successfully"));
+// });
+
+
+const registerUser = asyncHandler(async (req, res) => {
+  const { username, email, password,fullName } = req.body;
+
+  if ([username, email, password, fullName].some((field) => field?.trim() === "")) {
     throw new ApiError(400, "All fields are required");
   }
 
-  if(!validator.validate(email)){
-    throw new ApiError(400,"email you entered is not in correct format")
+  if (!validator.validate(email)) {
+    throw new ApiError(400, "Email you entered is not in correct format");
   }
 
   const existedUser = await User.findOne({
@@ -41,24 +97,23 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "User with email or username already exists");
   }
 
-   const avatarLocalPath = req.files?.avatar?.[0]?.path;
+  let avatarUrl = null;
 
-    if (!avatarLocalPath) {
-      throw new ApiError(400, "Avatar file is required");
+  if (req.files?.avatar?.length > 0) {
+    const avatarLocalPath = req.files.avatar[0].path;
+    const avatar = await uploadOnCloudinary(avatarLocalPath);
+    if (!avatar) {
+      throw new ApiError(400, "Failed to upload avatar");
     }
-
-
-  const avatar = await uploadOnCloudinary(avatarLocalPath);
-
-  if (!avatar) {
-    throw new ApiError(400, "Avatar file is required");
+    avatarUrl = avatar.url;
   }
 
   const user = await User.create({
+    fullName,
     username: username.toLowerCase(),
     email,
     password,
-    avatar: avatar.url,
+    avatar: avatarUrl, 
   });
 
   const createdUser = await User.findById(user._id).select("-refreshToken");
@@ -72,14 +127,18 @@ const registerUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, createdUser, "User registered successfully"));
 });
 
+
+
 const loginUser = asyncHandler(async (req, res) => {
+  console.log("func_calling")
   const { username, password } = req.body;
+  console.log(username)
 
   if (!(username && password)) {
     throw new ApiError(400, "Both username and password are required");
   }
 
-  const user = await User.findOne({ username });
+  const user = await User.findOne({ username }).select("+password");;
 
   if (!user) {
     throw new ApiError(400, "User does not exist");
@@ -188,11 +247,11 @@ const refreshAccessToken = asyncHandler(async (req,res) => {
 const changeCurrentPassword = asyncHandler(async(req,res) => {
   const {oldPassword, confirmPassword,newPassword} = req.body
   
-  if(!confirmPassword === newPassword){
+  if(confirmPassword !== newPassword){
     throw new ApiError(400,"confirmPassword is not same as newPassword")
   }
 
-  const user = await User.findById(req.user?._id)
+  const user = await User.findById(req.user?._id).select("+password")
   const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
 
   if(!isPasswordCorrect){
@@ -208,11 +267,15 @@ const changeCurrentPassword = asyncHandler(async(req,res) => {
   
 })
 
-const updateAccountDeatils = asyncHandler(async(req,res) => {
-    const {fullname,email} = req.body
+const updateAccountDetails = asyncHandler(async(req,res) => {
+    const {fullName,email} = req.body
 
-    if(!(fullname || email)){
-        throw new ApiError(400,"alll fields are required")
+    if(!fullName &&  !email){
+        throw new ApiError(400,"updation field are required")
+    }
+
+    if(email && !validator.validate(email)){
+      throw new ApiError("401","email you entered is not consistent")
     }
 
     const user = await User.findByIdAndUpdate(
@@ -220,7 +283,7 @@ const updateAccountDeatils = asyncHandler(async(req,res) => {
         {
             $set : {
                 // fullname : fullname or
-                fullname,
+                fullName,
                 email
             }
         },
@@ -265,7 +328,8 @@ const updateAccountDeatils = asyncHandler(async(req,res) => {
 // })
 
 const updateUserAvatar = asyncHandler(async (req, res) => {
-  const avatarLocalPath = req.files?.path;
+  const avatarLocalPath = req.files?.avatar?.[0]?.path;
+
 
   if (!avatarLocalPath) {
     throw new ApiError(400, "Avatar field is required");
@@ -277,7 +341,7 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Error while uploading avatar");
   }
 
-  const user = await User.findById(req.user?._id); // ← don't forget await
+  const user = await User.findById(req.user?._id);
 
   if (!user) {
     throw new ApiError(404, "User not found");
@@ -291,4 +355,13 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, user, "Avatar updated successfully"));
 });
 
-export { registerUser };
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  refreshAccessToken,
+  changeCurrentPassword,
+  updateAccountDetails,
+  updateUserAvatar
+};
+

@@ -1,6 +1,6 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
-import { ApiResponse } from "../utils/ApiResponse";
+import { ApiResponse } from "../utils/ApiResponse.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { Document } from "../models/document.model.js";
 import { User } from "../models/user.model.js";
@@ -45,7 +45,7 @@ const getMyDocuments = asyncHandler(async (req, res) => {
 
 
 const getSingleDocument = asyncHandler(async(req,res) =>{
-    const docId = req.params
+    const {docId} = req.params
 
     const document = await Document.findOne({
         _id : docId,
@@ -90,10 +90,18 @@ const shareDocument = asyncHandler(async(req,res) => {
   if(!document){
     throw new ApiError(404, "Document not found");
   }
+   
+  // console.log("uploadedBy:", document.uploadedBy, typeof document.uploadedBy);
+  // console.log("req.user._id:", req.user._id, typeof req.user._id);
 
-  if(document.uploadedBy.toString() !== req.user._id){
-    throw new ApiError(400,"you are not allowed to share this document")
+  // if(document.uploadedBy.toString() !== req.user._id){
+  //   throw new ApiError(400,"you are not allowed to share this document")
+  // }
+
+  if (!document.uploadedBy.equals(req.user._id)) {
+    throw new ApiError(400, "you are not allowed to share this document");
   }
+
 
   const reciever = await User.findOne({ email: recieverEmail });
 
@@ -109,8 +117,8 @@ const shareDocument = asyncHandler(async(req,res) => {
     to : recieverEmail,
     subject : "📄 A Document Has Been Shared With You",
     html: `
-      <h2>Hello ${targetUser.fullname},</h2>
-      <p><strong>${req.user.fullname}</strong> has shared a document with you on <strong>DocuFlow</strong>.</p>
+      <h2>Hello ${reciever.fullName},</h2>
+      <p><strong>${req.user.fullName}</strong> has shared a document with you on <strong>DocuFlow</strong>.</p>
       <p>Document Title: <strong>${document.title || "Untitled Document"}</strong></p>
       <p><a href="https://your-frontend-url.com/notes/${docId}">Click here to view the document</a></p>
       <br/>
@@ -153,4 +161,14 @@ const getSingleSharedWithMe = asyncHandler(async(req,res) => {
     .status(200)
     .json(new ApiResponse(200, document, "Shared document fetched successfully"));
 })
+
+export {
+  documentUpload,
+  getMyDocuments,
+  getSingleDocument,
+  deleteDocument,
+  shareDocument,
+  getAllSharedWithMe,
+  getSingleSharedWithMe
+}
 

@@ -21,7 +21,12 @@ const DocumentSchema = new Schema({
     fileUrl : {
         type : String,
         required : true
+    },
+    shareExpiration: {
+        type: Date,
+        default: null,
     }
+
     
 },{timestamps : true})
 
