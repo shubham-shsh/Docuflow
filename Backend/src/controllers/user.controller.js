@@ -129,6 +129,14 @@ const registerUser = asyncHandler(async (req, res) => {
 
 
 
+const getUser = asyncHandler(async (req, res) => {
+  return res.status(200).json({
+    success: true,
+    data: req.user || null,
+    message: 'current user fetched successfully'
+  });
+});
+
 const loginUser = asyncHandler(async (req, res) => {
   console.log("func_calling")
   const { username, password } = req.body;
@@ -358,6 +366,7 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
 export {
   registerUser,
   loginUser,
+  getUser,
   logoutUser,
   refreshAccessToken,
   changeCurrentPassword,

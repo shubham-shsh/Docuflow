@@ -2,7 +2,7 @@ import {mongoose, Schema} from "mongoose";
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import validator from "email-validator";
-// ...
+
 
 
 
@@ -37,6 +37,7 @@ const userSchema = new Schema({
 
     refreshToken : {
         type: String,
+        select : false
     },
 
     avatar: {
@@ -50,6 +51,22 @@ const userSchema = new Schema({
         ref: "Document",
       },
     ],
+
+    //whatsapp related
+    phoneNumber : {
+      type : String,
+      default : null
+    },
+
+    whatsappLinked : {
+      type : Boolean,
+      default : false
+    },
+
+    pinHash : {
+      type : String,
+      select : false
+    }
 
 },{timestamps : true})
 

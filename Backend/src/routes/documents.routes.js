@@ -4,6 +4,7 @@ import {
   documentUpload,
   getMyDocuments,
   getSingleDocument,
+  viewDocument,
   deleteDocument,
   shareDocument,
   getAllSharedWithMe,
@@ -29,8 +30,13 @@ router
 
 // Single document (my own)
 router
-  .route("/document/:docId")
+  .route("/view/:docId")
   .get(verifyJWT, getSingleDocument);
+
+router
+  .route("/my-documents/:docId/view")
+  .get(verifyJWT, viewDocument);
+
 
 // Delete document
 router
@@ -51,5 +57,42 @@ router
 router
   .route("/share-me/:docId")
   .get(verifyJWT, getSingleSharedWithMe);
+
+// In your document routes
+router.get("/pdf/:docId", verifyJWT, async (req, res) => {
+  try {
+    const { docId } = req.params;
+    
+    // Get document and verify permissions (same as getSingleDocument logic)
+    const document = await Document.findById(docId);
+    
+    if (!document) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const isOwner = document.uploadedBy.toString() === req.user._id.toString();
+    const isShared = document.sharedWith.some(
+      (userId) => userId.toString() === req.user._id.toString()
+    );
+
+    if (!isOwner && !isShared) {
+      return res.status(403).json({ error: "Permission denied" });
+    }
+
+    // Proxy the PDF
+    const axios = require('axios');
+    const pdfResponse = await axios.get(document.fileUrl, {
+      responseType: 'stream'
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline');
+    pdfResponse.data.pipe(res);
+
+  } catch (error) {
+    res.status(500).json({ error: "Failed to load PDF" });
+  }
+});
+
 
 export default router;

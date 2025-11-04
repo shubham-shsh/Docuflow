@@ -1,26 +1,52 @@
-import {v2 as cloudinary} from "cloudinary"
-import fs from "fs"
+import { v2 as cloudinary } from "cloudinary";
+import fs from "fs";
 
 cloudinary.config({
-    cloud_name : process.env.CLOUDINARY_CLOUD_NAME,
-    api_key : process.env.CLOUDINARY_API_KEY,
-    api_secret : process.env.CLOUDINARY_API_SECRET
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const uploadOnCloudinary = async(localFilePath) => {
-    try {
-        if(!localFilePath) return null
+const uploadOnCloudinary = async (localFilePath, mimetype) => {
+  try {
+    if (!localFilePath) return null;
 
-        const response = await cloudinary.uploader.upload(localFilePath , {
-            resource_type : "auto"
-        })
-        // Delete the file from local storage after successful upload
-        fs.unlinkSync(localFilePath)
-        return response
-    } catch (error) {
-        // Delete the local file even if upload fails
-        fs.unlinkSync(localFilePath)
+    let resourceType = "raw";
+    let uploadOptions = {
+      folder: "documents",
+      use_filename: true,
+      unique_filename: true,
+    };
+
+    // Determine resource type based on mime type
+    if (mimetype?.startsWith("image/")) {
+      resourceType = "image";
+    } else if (mimetype?.startsWith("video/")) {
+      resourceType = "video";
+    } else {
+      // For PDFs and other documents
+      resourceType = "raw";
+      // Remove attachment flag to allow inline viewing
+      uploadOptions.flags = undefined;
     }
-}
 
-export {uploadOnCloudinary}
+    const response = await cloudinary.uploader.upload(localFilePath, {
+      resource_type: resourceType,
+      ...uploadOptions,
+    });
+
+    if (fs.existsSync(localFilePath)) {
+      fs.unlinkSync(localFilePath);
+    }
+
+    return response;
+  } catch (error) {
+    if (fs.existsSync(localFilePath)) {
+      fs.unlinkSync(localFilePath);
+    }
+    console.error("Cloudinary upload failed:", error);
+    return null;
+  }
+};
+
+export { uploadOnCloudinary };

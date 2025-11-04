@@ -12,6 +12,16 @@ const DocumentSchema = new Schema({
         ref : "User",
         required : true
     },
+
+    originalName: { 
+      type: String,
+      required: false,
+    },
+    
+    mimetype: { 
+      type: String,
+      required: false,
+    },
     sharedWith : [
         {
             type : mongoose.Schema.Types.ObjectId,

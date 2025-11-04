@@ -6,6 +6,35 @@ import { Document } from "../models/document.model.js";
 import { User } from "../models/user.model.js";
 import {sendEmail} from "../utils/mail.js";
 
+// const documentUpload = asyncHandler(async (req, res) => {
+//   const { title } = req.body;
+
+//   if (!title) {
+//     throw new ApiError(400, "Document title is required");
+//   }
+
+//   const documentLocalPath = req.files?.document?.[0]?.path;
+//   if (!documentLocalPath) {
+//     throw new ApiError(400, "Document file is required");
+//   }
+
+//   const docFile = await uploadOnCloudinary(documentLocalPath);
+//   if (!docFile || !docFile.secure_url) {
+//     throw new ApiError(400, "Failed to upload document");
+//   }
+
+//   const doc = await Document.create({
+//     title,
+//     fileUrl: docFile.secure_url,
+//     uploadedBy: req.user?._id
+//   });
+
+//   return res
+//   .status(200)
+//   .json(new ApiResponse(200,doc,"document uploaded successfully"))
+// });
+
+
 const documentUpload = asyncHandler(async (req, res) => {
   const { title } = req.body;
 
@@ -13,26 +42,35 @@ const documentUpload = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Document title is required");
   }
 
-  const documentLocalPath = req.files?.document?.[0]?.path;
+  const fileObj = req.files?.document?.[0];
+  const documentLocalPath = fileObj?.path;
+  const mimetype = fileObj?.mimetype || null; // Handle cases where mimetype might be undefined
+  const originalName = fileObj?.originalname || null; // Handle cases where originalname might be undefined
+
   if (!documentLocalPath) {
     throw new ApiError(400, "Document file is required");
   }
 
-  const docFile = await uploadOnCloudinary(documentLocalPath);
+  // Upload to cloudinary with mimetype
+  const docFile = await uploadOnCloudinary(documentLocalPath, mimetype);
   if (!docFile || !docFile.secure_url) {
     throw new ApiError(400, "Failed to upload document");
   }
 
+  // Create document - mimetype and originalName can be null
   const doc = await Document.create({
     title,
     fileUrl: docFile.secure_url,
-    uploadedBy: req.user?._id
+    originalName, // Can be null
+    mimetype, // Can be null
+    uploadedBy: req.user?._id,
   });
 
   return res
-  .status(200)
-  .json(new ApiResponse(200,doc,"document uploaded successfully"))
+    .status(200)
+    .json(new ApiResponse(200, doc, "Document uploaded successfully"));
 });
+
 
 const getMyDocuments = asyncHandler(async (req, res) => {
   const documents = await Document.find({uploadedBy : req.user._id})
@@ -44,21 +82,93 @@ const getMyDocuments = asyncHandler(async (req, res) => {
 })
 
 
-const getSingleDocument = asyncHandler(async(req,res) =>{
-    const {docId} = req.params
+// const getSingleDocument = asyncHandler(async(req,res) =>{
+//     const {docId} = req.params
 
-    const document = await Document.findOne({
-        _id : docId,
-        uploadedBy : req.user._id
-    })
-    if (!document) {
-        throw new ApiError(404, "Document not found or access denied");
-    }
+//     const document = await Document.findOne({
+//         _id : docId,
+//         uploadedBy : req.user._id
+//     })
+//     if (!document) {
+//         throw new ApiError(404, "Document not found or access denied");
+//     }
 
-    return res
+//     return res
+//     .status(200)
+//     .json(new ApiResponse(200, document, "Document fetched successfully"));
+// })
+
+const getSingleDocument = asyncHandler(async (req, res) => {
+  const { docId } = req.params;
+
+  const document = await Document.findById(docId);
+
+  if (!document) {
+    throw new ApiError(404, "Document not found");
+  }
+
+  // Check if user owns the document OR it's shared with them
+  const isOwner = document.uploadedBy.toString() === req.user._id.toString();
+  const isShared = document.sharedWith.some(
+    (userId) => userId.toString() === req.user._id.toString()
+  );
+
+  if (!isOwner && !isShared) {
+    throw new ApiError(403, "You don't have permission to view this document");
+  }
+
+  // Check if share has expired
+  if (document.shareExpiration && document.shareExpiration < new Date()) {
+    throw new ApiError(403, "Share link expired");
+  }
+
+  return res
     .status(200)
-    .json(new ApiResponse(200, document, "Document fetched successfully"));
-})
+    .json(
+      new ApiResponse(
+        200,
+        {
+          _id: document._id,
+          title: document.title,
+          fileUrl: document.fileUrl,
+          originalName: document.originalName,
+          mimetype: document.mimetype,
+          uploadedBy: document.uploadedBy,
+          createdAt: document.createdAt,
+        },
+        "Document retrieved successfully"
+      )
+    );
+});
+
+
+const viewDocument = asyncHandler(async (req, res) => {
+  const { docId } = req.params;
+
+  const document = await Document.findById(docId);
+
+  if (!document) {
+    throw new ApiError(404, "Document not found");
+  }
+
+  const isOwner = document.uploadedBy.toString() === req.user._id.toString();
+  const isShared = document.sharedWith.some(
+    (userId) => userId.toString() === req.user._id.toString()
+  );
+
+  if (!isOwner && !isShared) {
+    throw new ApiError(403, "You don’t have permission to view this file");
+  }
+
+  if (document.shareExpiration && document.shareExpiration < new Date()) {
+    throw new ApiError(403, "Share link expired");
+  }
+
+  return res.status(200)
+  .json(new ApiResponse(200,document.fileUrl,"View document successfull"))
+});
+
+
 
 const deleteDocument = asyncHandler(async (req, res) => {
   const { docId } = req.params;
@@ -120,8 +230,6 @@ const shareDocument = asyncHandler(async(req,res) => {
       <h2>Hello ${reciever.fullName},</h2>
       <p><strong>${req.user.fullName}</strong> has shared a document with you on <strong>DocuFlow</strong>.</p>
       <p>Document Title: <strong>${document.title || "Untitled Document"}</strong></p>
-      <p><a href="https://your-frontend-url.com/notes/${docId}">Click here to view the document</a></p>
-      <br/>
       <p>Thanks,<br/>DocuFlow Team</p>
     `
   })
@@ -166,6 +274,7 @@ export {
   documentUpload,
   getMyDocuments,
   getSingleDocument,
+  viewDocument,
   deleteDocument,
   shareDocument,
   getAllSharedWithMe,
