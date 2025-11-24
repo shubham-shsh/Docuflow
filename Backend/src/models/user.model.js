@@ -4,9 +4,6 @@ import jwt from "jsonwebtoken"
 import validator from "email-validator";
 
 
-
-
-
 const userSchema = new Schema({
     username: {
       type: String,

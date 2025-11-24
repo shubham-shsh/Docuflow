@@ -35,6 +35,30 @@ const DocumentSchema = new Schema({
     shareExpiration: {
         type: Date,
         default: null,
+    },
+    hash : {
+        type : String,
+        default : null
+    },
+    aliases : {
+        type : [String],
+        default : []
+    },
+    tags : {
+        type : [String],
+        default : []
+    },
+    mediaId: { 
+        type: String,
+        default: null 
+    },      // WhatsApp media_id
+    mediaMime: { 
+        type: String,
+        default: null 
+    },    // MIME type at upload time
+    lastSentAt: { 
+        type: Date,
+        default: null
     }
 
     

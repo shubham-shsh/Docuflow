@@ -5,6 +5,10 @@ import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { Document } from "../models/document.model.js";
 import { User } from "../models/user.model.js";
 import {sendEmail} from "../utils/mail.js";
+import fs from "fs";
+import crypto from "crypto"
+import axios from "axios"
+
 
 // const documentUpload = asyncHandler(async (req, res) => {
 //   const { title } = req.body;
@@ -36,7 +40,7 @@ import {sendEmail} from "../utils/mail.js";
 
 
 const documentUpload = asyncHandler(async (req, res) => {
-  const { title } = req.body;
+  const { title ,aliases = [], tags = []} = req.body;
 
   if (!title) {
     throw new ApiError(400, "Document title is required");
@@ -50,20 +54,43 @@ const documentUpload = asyncHandler(async (req, res) => {
   if (!documentLocalPath) {
     throw new ApiError(400, "Document file is required");
   }
-
+ 
+  const fileBuffer = fs.readFileSync(documentLocalPath);
+  const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
   // Upload to cloudinary with mimetype
   const docFile = await uploadOnCloudinary(documentLocalPath, mimetype);
+
   if (!docFile || !docFile.secure_url) {
     throw new ApiError(400, "Failed to upload document");
   }
+
+
+  const aliasArray = Array.isArray(aliases)
+      ? aliases
+      : typeof aliases == "string" 
+      ? aliases.split(",").map(a => a.trim().toLowerCase())
+      : [];
+
+  const tagArray = Array.isArray(tags)
+    ? tags 
+    : typeof tags == "string"
+    ? tags.split(",").map(a => a.trim().toLowerCase())
+    : []
 
   // Create document - mimetype and originalName can be null
   const doc = await Document.create({
     title,
     fileUrl: docFile.secure_url,
-    originalName, // Can be null
-    mimetype, // Can be null
+    originalName, 
+    mimetype, 
     uploadedBy: req.user?._id,
+    hash,
+    aliases : [...new Set(aliasArray)],
+    tags : [...new Set(tagArray)]
+  });
+
+  await User.findByIdAndUpdate(req.user._id, {
+    $push: { uploadedDocuments: doc._id },
   });
 
   return res
@@ -270,6 +297,61 @@ const getSingleSharedWithMe = asyncHandler(async(req,res) => {
     .json(new ApiResponse(200, document, "Shared document fetched successfully"));
 })
 
+
+const updateDocumentAliases = asyncHandler(async (req, res) => {
+  const { docId } = req.params;
+  const { aliases } = req.body;
+
+  if (!Array.isArray(aliases) || aliases.length === 0) {
+    throw new ApiError(400, "Aliases must be a non-empty array");
+  }
+
+  const document = await Document.findOneAndUpdate({
+     _id: docId,
+      uploadedBy: req.user._id 
+    },
+    { $set: { aliases } },
+    { new: true }
+  );
+
+  if (!document) {
+    throw new ApiError(404, "Document not found or not yours");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, document, "Aliases updated successfully"));
+});
+
+
+const streamPDF = asyncHandler(async (req, res) => {
+  const { docId } = req.params;
+
+  const document = await Document.findById(docId);
+  if (!document) {
+    throw new ApiError(404, "Document not found");
+  }
+
+  const isOwner = document.uploadedBy.toString() === req.user._id.toString();
+  const isShared = document.sharedWith.some(
+    (userId) => userId.toString() === req.user._id.toString()
+  );
+
+  if (!isOwner && !isShared) {
+    throw new ApiError(403, "Permission denied");
+  }
+
+  // Fetch PDF from Cloudinary and stream it
+  const pdfResponse = await axios.get(document.fileUrl, { responseType: "stream" });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", "inline");
+  pdfResponse.data.pipe(res);
+});
+
+
+
+
 export {
   documentUpload,
   getMyDocuments,
@@ -278,6 +360,8 @@ export {
   deleteDocument,
   shareDocument,
   getAllSharedWithMe,
-  getSingleSharedWithMe
+  getSingleSharedWithMe,
+  updateDocumentAliases,
+  streamPDF
 }
 
