@@ -4,6 +4,11 @@ import cookieParser from "cookie-parser";
 import { errorHandler } from "./middlewares/error.middleware.js";
 
 const app = express();
+app.use((req, res, next) => {
+  console.log("🌍 INCOMING:", req.method, req.originalUrl);
+  next();
+});
+
 
 app.use(cors({
     origin: process.env.CORS_ORIGIN,

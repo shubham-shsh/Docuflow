@@ -8,39 +8,71 @@ import {sendEmail} from "../utils/mail.js";
 import fs from "fs";
 import crypto from "crypto"
 import axios from "axios"
+import { normalizeArray } from "../utils/AliasNormalize.js";
 
 
 // const documentUpload = asyncHandler(async (req, res) => {
-//   const { title } = req.body;
+//   const { title ,aliases = [], tags = []} = req.body;
 
 //   if (!title) {
 //     throw new ApiError(400, "Document title is required");
 //   }
 
-//   const documentLocalPath = req.files?.document?.[0]?.path;
+//   const fileObj = req.files?.document?.[0];
+//   const documentLocalPath = fileObj?.path;
+//   const mimetype = fileObj?.mimetype || null; // Handle cases where mimetype might be undefined
+//   const originalName = fileObj?.originalname || null; // Handle cases where originalname might be undefined
+
 //   if (!documentLocalPath) {
 //     throw new ApiError(400, "Document file is required");
 //   }
+ 
+//   const fileBuffer = fs.readFileSync(documentLocalPath);
+//   const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+//   // Upload to cloudinary with mimetype
+//   const docFile = await uploadOnCloudinary(documentLocalPath, mimetype);
 
-//   const docFile = await uploadOnCloudinary(documentLocalPath);
 //   if (!docFile || !docFile.secure_url) {
 //     throw new ApiError(400, "Failed to upload document");
 //   }
 
+
+//   const aliasArray = Array.isArray(aliases)
+//       ? aliases
+//       : typeof aliases == "string" 
+//       ? aliases.split(",").map(a => a.trim().toLowerCase())
+//       : [];
+
+//   const tagArray = Array.isArray(tags)
+//     ? tags 
+//     : typeof tags == "string"
+//     ? tags.split(",").map(a => a.trim().toLowerCase())
+//     : []
+
+//   // Create document - mimetype and originalName can be null
 //   const doc = await Document.create({
 //     title,
 //     fileUrl: docFile.secure_url,
-//     uploadedBy: req.user?._id
+//     originalName, 
+//     mimetype, 
+//     uploadedBy: req.user?._id,
+//     hash,
+//     aliases : [...new Set(aliasArray)],
+//     tags : [...new Set(tagArray)]
+//   });
+
+//   await User.findByIdAndUpdate(req.user._id, {
+//     $push: { uploadedDocuments: doc._id },
 //   });
 
 //   return res
-//   .status(200)
-//   .json(new ApiResponse(200,doc,"document uploaded successfully"))
+//     .status(200)
+//     .json(new ApiResponse(200, doc, "Document uploaded successfully"));
 // });
 
 
 const documentUpload = asyncHandler(async (req, res) => {
-  const { title ,aliases = [], tags = []} = req.body;
+  const { title, aliases = [], tags = [] } = req.body;
 
   if (!title) {
     throw new ApiError(400, "Document title is required");
@@ -48,50 +80,69 @@ const documentUpload = asyncHandler(async (req, res) => {
 
   const fileObj = req.files?.document?.[0];
   const documentLocalPath = fileObj?.path;
-  const mimetype = fileObj?.mimetype || null; // Handle cases where mimetype might be undefined
-  const originalName = fileObj?.originalname || null; // Handle cases where originalname might be undefined
+  const mimetype = fileObj?.mimetype || null;
+  const originalName = fileObj?.originalname || null;
 
   if (!documentLocalPath) {
     throw new ApiError(400, "Document file is required");
   }
- 
-  const fileBuffer = fs.readFileSync(documentLocalPath);
-  const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
-  // Upload to cloudinary with mimetype
-  const docFile = await uploadOnCloudinary(documentLocalPath, mimetype);
 
+  // Read file + hash
+  const fileBuffer = await fs.promises.readFile(documentLocalPath);
+  const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+
+  // ------------ 1) DUPLICATE CHECK BY HASH ------------
+  const existingDoc = await Document.findOne({ hash });
+
+  // Normalize aliases/tags for DB invariant
+  const aliasArray = normalizeArray(aliases);
+  const tagArray = normalizeArray(tags);
+
+  if (existingDoc) {
+    // Add new aliases/tags if any
+    await Document.findByIdAndUpdate(existingDoc._id, {
+      $addToSet: { aliases: { $each: aliasArray }, tags: { $each: tagArray } }
+    });
+
+    // Add doc to user (no duplicates)
+    await User.findByIdAndUpdate(req.user._id, {
+      $addToSet: { uploadedDocuments: existingDoc._id }
+    });
+
+    // Remove temp file
+    await fs.promises.unlink(documentLocalPath);
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, existingDoc, "Duplicate file - returned existing document"));
+  }
+
+  // ------------ 2) NEW FILE → UPLOAD TO CLOUDINARY ------------
+  const docFile = await uploadOnCloudinary(documentLocalPath, mimetype);
   if (!docFile || !docFile.secure_url) {
+    await fs.promises.unlink(documentLocalPath);
     throw new ApiError(400, "Failed to upload document");
   }
 
-
-  const aliasArray = Array.isArray(aliases)
-      ? aliases
-      : typeof aliases == "string" 
-      ? aliases.split(",").map(a => a.trim().toLowerCase())
-      : [];
-
-  const tagArray = Array.isArray(tags)
-    ? tags 
-    : typeof tags == "string"
-    ? tags.split(",").map(a => a.trim().toLowerCase())
-    : []
-
-  // Create document - mimetype and originalName can be null
+  // ------------ 3) CREATE NEW DOCUMENT ------------
   const doc = await Document.create({
     title,
     fileUrl: docFile.secure_url,
-    originalName, 
-    mimetype, 
+    originalName,
+    mimetype,
     uploadedBy: req.user?._id,
     hash,
-    aliases : [...new Set(aliasArray)],
-    tags : [...new Set(tagArray)]
+    aliases: [...new Set(aliasArray)],
+    tags: [...new Set(tagArray)],
   });
 
+  // Add to user's uploads (no duplicates)
   await User.findByIdAndUpdate(req.user._id, {
-    $push: { uploadedDocuments: doc._id },
+    $addToSet: { uploadedDocuments: doc._id }
   });
+
+  // Remove temp file
+  await fs.promises.unlink(documentLocalPath);
 
   return res
     .status(200)
