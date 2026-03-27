@@ -4,6 +4,7 @@ import { app } from "./app.js"
 dotenv.config({
     path : './.env'
 })
+console.log("URI Check:", process.env.MONGODB_URI);
 
 conectDb()
 .then(() => {

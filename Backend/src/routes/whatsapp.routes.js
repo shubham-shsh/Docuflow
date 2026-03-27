@@ -91,24 +91,35 @@ async function sendByMimeLink({ to, link, mime, filename, caption }) {
 }
 
 // GET /whatsapp/webhook (verification)
-router.get(
-  "/webhook",
-  asyncHandler(async (req, res) => {
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"];
-    const challenge = req.query["hub.challenge"];
-    if (mode === "subscribe" && token === VERIFY_TOKEN) return res.status(200).send(challenge);
-    return res.sendStatus(403);
-  })
-);
+router.get("/webhook", (req, res) => {
+  console.log("🔥 WEBHOOK HIT");
 
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  console.log("RAW QUERY:", req.query);
+  console.log("MODE:", mode);
+  console.log("TOKEN FROM META:", token);
+  console.log("ENV TOKEN:", process.env.META_VERIFY_TOKEN);
+
+  if (mode === "subscribe" && token === process.env.META_VERIFY_TOKEN) {
+    console.log("✅ VERIFIED SUCCESS");
+    return res.status(200).send(challenge);
+  }
+
+  console.log("❌ FAILED");
+  return res.sendStatus(403);
+});
 // POST /whatsapp/webhook (receive messages)
 router.post(
   "/webhook",
+  
   asyncHandler(async (req, res) => {
     const entry = req.body?.entry?.[0];
     const change = entry?.changes?.[0];
     const message = change?.value?.messages?.[0];
+    
 
     if (!message) return res.status(200).json(new ApiResponse(200, "no message"));
 

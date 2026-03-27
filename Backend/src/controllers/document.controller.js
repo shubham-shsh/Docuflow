@@ -70,7 +70,13 @@ import { normalizeArray } from "../utils/AliasNormalize.js";
 //     .json(new ApiResponse(200, doc, "Document uploaded successfully"));
 // });
 
-
+const safeUnlink = async (filePath) => {
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (err) {
+    console.log("Temp file already removed or not found");
+  }
+};
 const documentUpload = asyncHandler(async (req, res) => {
   const { title, aliases = [], tags = [] } = req.body;
 
@@ -87,44 +93,43 @@ const documentUpload = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Document file is required");
   }
 
-  // Read file + hash
+  // Read file + generate SHA256 hash
   const fileBuffer = await fs.promises.readFile(documentLocalPath);
   const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
-  // ------------ 1) DUPLICATE CHECK BY HASH ------------
-  const existingDoc = await Document.findOne({ hash });
-
-  // Normalize aliases/tags for DB invariant
+  // Normalize aliases/tags
   const aliasArray = normalizeArray(aliases);
   const tagArray = normalizeArray(tags);
 
+  // ------------ 1️⃣ DUPLICATE CHECK BY HASH ------------
+  const existingDoc = await Document.findOne({ hash });
+
   if (existingDoc) {
-    // Add new aliases/tags if any
     await Document.findByIdAndUpdate(existingDoc._id, {
       $addToSet: { aliases: { $each: aliasArray }, tags: { $each: tagArray } }
     });
 
-    // Add doc to user (no duplicates)
     await User.findByIdAndUpdate(req.user._id, {
       $addToSet: { uploadedDocuments: existingDoc._id }
     });
 
-    // Remove temp file
-    await fs.promises.unlink(documentLocalPath);
+    // 🧹 Safe temp file delete
+    await safeUnlink(documentLocalPath);
 
     return res
       .status(200)
       .json(new ApiResponse(200, existingDoc, "Duplicate file - returned existing document"));
   }
 
-  // ------------ 2) NEW FILE → UPLOAD TO CLOUDINARY ------------
+  // ------------ 2️⃣ UPLOAD TO CLOUDINARY ------------
   const docFile = await uploadOnCloudinary(documentLocalPath, mimetype);
+
   if (!docFile || !docFile.secure_url) {
-    await fs.promises.unlink(documentLocalPath);
+    await safeUnlink(documentLocalPath);
     throw new ApiError(400, "Failed to upload document");
   }
 
-  // ------------ 3) CREATE NEW DOCUMENT ------------
+  // ------------ 3️⃣ CREATE NEW DOCUMENT ------------
   const doc = await Document.create({
     title,
     fileUrl: docFile.secure_url,
@@ -136,18 +141,18 @@ const documentUpload = asyncHandler(async (req, res) => {
     tags: [...new Set(tagArray)],
   });
 
-  // Add to user's uploads (no duplicates)
   await User.findByIdAndUpdate(req.user._id, {
     $addToSet: { uploadedDocuments: doc._id }
   });
 
-  // Remove temp file
-  await fs.promises.unlink(documentLocalPath);
+  // 🧹 Safe temp file delete
+  await safeUnlink(documentLocalPath);
 
   return res
     .status(200)
     .json(new ApiResponse(200, doc, "Document uploaded successfully"));
 });
+
 
 
 const getMyDocuments = asyncHandler(async (req, res) => {
