@@ -1,22 +1,26 @@
-import nodemailer from "nodemailer";
+import { Resend } from 'resend';
 
-const send = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER, 
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const sendEmail = async ({ to, subject, html }) => {
-  const mailOptions = {
-    from: `"DocuFlow 👨‍💻" <${process.env.EMAIL_USER}>`,
-    to,
-    subject,
-    html,
-  };
+  try {
+    const { data, error } = await resend.emails.send({
+      from: `DocuFlow 👨‍💻 <${process.env.EMAIL_FROM || 'onboarding@resend.dev'}>`,
+      to,
+      subject,
+      html,
+    });
 
-  await send.sendMail(mailOptions);
+    if (error) {
+      console.error("Resend Error:", error);
+      throw new Error(error.message);
+    }
+
+    return data;
+  } catch (err) {
+    console.error("Failed to send email:", err);
+    throw err;
+  }
 };
 
-export  {sendEmail};
+export { sendEmail };

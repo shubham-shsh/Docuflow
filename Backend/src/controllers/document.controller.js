@@ -284,12 +284,6 @@ const shareDocument = asyncHandler(async(req,res) => {
     throw new ApiError(404, "Document not found");
   }
    
-  // console.log("uploadedBy:", document.uploadedBy, typeof document.uploadedBy);
-  // console.log("req.user._id:", req.user._id, typeof req.user._id);
-
-  // if(document.uploadedBy.toString() !== req.user._id){
-  //   throw new ApiError(400,"you are not allowed to share this document")
-  // }
 
   if (!document.uploadedBy.equals(req.user._id)) {
     throw new ApiError(400, "you are not allowed to share this document");
